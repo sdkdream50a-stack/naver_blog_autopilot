@@ -5,9 +5,10 @@ Flask UI 서버 실행 스크립트
 
 from app import create_app
 
-if __name__ == '__main__':
-    app = create_app()
+# gunicorn에서 참조할 수 있도록 모듈 레벨에 app 노출
+app = create_app()
 
+if __name__ == '__main__':
     print("=" * 60)
     print("🚀 네이버 블로그 자동화 UI 서버 시작")
     print("=" * 60)
