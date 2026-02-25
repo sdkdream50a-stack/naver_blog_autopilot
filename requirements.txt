@@ -1,0 +1,35 @@
+# NaverBlogAutoPilot 의존성 패키지
+
+# AI
+anthropic>=0.39.0
+google-genai>=1.0.0  # Gemini API (이미지 생성)
+
+# 웹 크롤링
+aiohttp>=3.9.0
+beautifulsoup4>=4.12.0
+trafilatura>=1.12.0
+lxml>=5.0.0
+
+# 브라우저 자동화
+playwright>=1.40.0
+
+# 데이터 검증 & 템플릿
+pydantic>=2.5.0
+jinja2>=3.1.0
+
+# 웹 프레임워크 (UI)
+Flask>=3.0.0
+
+# 유틸리티
+loguru>=0.7.0
+python-dotenv>=1.0.0
+APScheduler>=3.10.0
+numpy>=1.26.0
+
+# 테스트
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+pytest-mock>=3.12.0
+
+# 타입 체크 (선택)
+# mypy>=1.7.0

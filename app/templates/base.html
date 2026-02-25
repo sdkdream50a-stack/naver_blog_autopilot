@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}네이버 블로그 자동화{% endblock %}</title>
+
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- 네비게이션 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-robot"></i>
+                네이버 블로그 자동화
+            </a>
+
+            <!-- 블로그 Selector -->
+            <div class="dropdown ms-3" x-data="blogSelector()">
+                <button class="btn btn-outline-light dropdown-toggle" type="button" id="blogDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-journal-text"></i>
+                    <span x-text="currentBlog?.display_name || '블로그 선택'"></span>
+                </button>
+                <ul class="dropdown-menu" aria-labelledby="blogDropdown">
+                    <li><h6 class="dropdown-header">블로그 전환</h6></li>
+                    <template x-for="blog in blogs" :key="blog.id">
+                        <li>
+                            <a class="dropdown-item" href="#"
+                               @click.prevent="switchBlog(blog.id)"
+                               :class="{'active': blog.id === currentBlog?.id}">
+                                <i class="bi bi-check-circle-fill me-2" x-show="blog.id === currentBlog?.id"></i>
+                                <span x-text="blog.display_name"></span>
+                                <small class="text-muted ms-2" x-text="'(' + blog.name + ')'"></small>
+                            </a>
+                        </li>
+                    </template>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item text-primary" href="#" @click.prevent="showAddBlogModal()">
+                            <i class="bi bi-plus-circle me-2"></i>
+                            새 블로그 추가
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="/">
+                            <i class="bi bi-speedometer2"></i> 대시보드
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/workflow' %}active{% endif %}" href="/workflow">
+                            <i class="bi bi-diagram-3"></i> 워크플로우
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/schedule' %}active{% endif %}" href="/schedule">
+                            <i class="bi bi-calendar-event"></i> 스케줄
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/content' %}active{% endif %}" href="/content">
+                            <i class="bi bi-file-earmark-text"></i> 콘텐츠
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/monitor' %}active{% endif %}" href="/monitor">
+                            <i class="bi bi-graph-up"></i> 모니터링
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/settings' %}active{% endif %}" href="/settings">
+                            <i class="bi bi-gear"></i> 설정
+                        </a>
+                    </li>
+                </ul>
+
+                <!-- 알림 -->
+                <div class="dropdown" x-data="notificationCenter()">
+                    <button class="btn btn-light position-relative" type="button" id="notificationDropdown" data-bs-toggle="dropdown">
+                        <i class="bi bi-bell"></i>
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" x-show="unreadCount > 0" x-text="unreadCount">
+                            <span class="visually-hidden">읽지 않은 알림</span>
+                        </span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="notificationDropdown" style="width: 350px; max-height: 400px; overflow-y: auto;">
+                        <li><h6 class="dropdown-header">알림</h6></li>
+                        <li><hr class="dropdown-divider"></li>
+
+                        <template x-for="notification in notifications" :key="notification.id">
+                            <li>
+                                <a class="dropdown-item" href="#" @click.prevent="markAsRead(notification.id)" :class="{'bg-light': !notification.read}">
+                                    <div class="d-flex align-items-start">
+                                        <i class="bi me-2" :class="{
+                                            'bi-info-circle text-primary': notification.type === 'info',
+                                            'bi-check-circle text-success': notification.type === 'success',
+                                            'bi-exclamation-triangle text-warning': notification.type === 'warning',
+                                            'bi-x-circle text-danger': notification.type === 'error'
+                                        }"></i>
+                                        <div class="flex-grow-1">
+                                            <div class="fw-semibold" x-text="notification.title"></div>
+                                            <small class="text-muted" x-text="notification.message"></small>
+                                            <br>
+                                            <small class="text-muted" x-text="formatTime(notification.timestamp)"></small>
+                                        </div>
+                                    </div>
+                                </a>
+                            </li>
+                        </template>
+
+                        <template x-if="notifications.length === 0">
+                            <li><a class="dropdown-item text-muted text-center" href="#">알림이 없습니다</a></li>
+                        </template>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 메인 콘텐츠 -->
+    <main class="container-fluid py-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+    <!-- 알림 센터 -->
+    <script>
+    function notificationCenter() {
+        return {
+            notifications: [],
+            unreadCount: 0,
+
+            async init() {
+                await this.loadNotifications();
+                // 30초마다 알림 갱신
+                setInterval(() => this.loadNotifications(), 30000);
+            },
+
+            async loadNotifications() {
+                try {
+                    const response = await fetch('/api/notifications');
+                    if (response.ok) {
+                        this.notifications = await response.json();
+                        this.unreadCount = this.notifications.filter(n => !n.read).length;
+                    }
+                } catch (error) {
+                    console.error('알림 로드 실패:', error);
+                }
+            },
+
+            async markAsRead(notificationId) {
+                try {
+                    const response = await fetch(`/api/notifications/${notificationId}/read`, {
+                        method: 'PUT'
+                    });
+                    if (response.ok) {
+                        const notification = this.notifications.find(n => n.id === notificationId);
+                        if (notification) {
+                            notification.read = true;
+                            this.unreadCount = this.notifications.filter(n => !n.read).length;
+                        }
+                    }
+                } catch (error) {
+                    console.error('알림 읽음 처리 실패:', error);
+                }
+            },
+
+            formatTime(timestamp) {
+                const date = new Date(timestamp);
+                const now = new Date();
+                const diff = now - date;
+
+                if (diff < 60000) return '방금 전';
+                if (diff < 3600000) return `${Math.floor(diff / 60000)}분 전`;
+                if (diff < 86400000) return `${Math.floor(diff / 3600000)}시간 전`;
+                return date.toLocaleDateString('ko-KR');
+            }
+        }
+    }
+
+    function blogSelector() {
+        return {
+            blogs: [],
+            currentBlog: null,
+
+            async init() {
+                await this.loadBlogs();
+                await this.loadCurrentBlog();
+            },
+
+            async loadBlogs() {
+                try {
+                    const response = await fetch('/api/blogs');
+                    if (response.ok) {
+                        this.blogs = await response.json();
+                    }
+                } catch (error) {
+                    console.error('블로그 목록 로드 실패:', error);
+                }
+            },
+
+            async loadCurrentBlog() {
+                try {
+                    const response = await fetch('/api/blogs/current');
+                    if (response.ok) {
+                        this.currentBlog = await response.json();
+                    }
+                } catch (error) {
+                    console.error('현재 블로그 로드 실패:', error);
+                }
+            },
+
+            async switchBlog(blogId) {
+                try {
+                    const response = await fetch('/api/blogs/current', {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ blog_id: blogId })
+                    });
+
+                    if (response.ok) {
+                        // 페이지 새로고침하여 블로그 컨텍스트 적용
+                        window.location.reload();
+                    }
+                } catch (error) {
+                    console.error('블로그 전환 실패:', error);
+                    alert('블로그 전환에 실패했습니다.');
+                }
+            },
+
+            showAddBlogModal() {
+                // TODO: 새 블로그 추가 모달 구현
+                alert('새 블로그 추가 기능은 설정 페이지에서 구현 예정입니다.');
+            }
+        }
+    }
+    </script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

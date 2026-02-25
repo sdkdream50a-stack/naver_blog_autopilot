@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+
+{% block title %}스케줄 설정 - 네이버 블로그 자동화{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h3">
+            <i class="bi bi-calendar-event"></i>
+            스케줄 설정
+        </h1>
+    </div>
+</div>
+
+<div class="row" x-data="scheduleManager()">
+    <!-- 크롤링 스케줄 -->
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-download"></i>
+                    크롤링 스케줄
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">활성화</label>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" x-model="schedule.crawl.enabled">
+                        <label class="form-check-label">
+                            <span x-text="schedule.crawl.enabled ? '활성' : '비활성'"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">실행 시간</label>
+                    <input type="time" class="form-control" x-model="schedule.crawl.time">
+                    <small class="text-muted">매일 지정된 시간에 실행됩니다</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">다음 실행</label>
+                    <p class="text-muted" x-text="getNextRun(schedule.crawl.time)"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 발행 스케줄 -->
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-upload"></i>
+                    발행 스케줄
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">활성화</label>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" x-model="schedule.publish.enabled">
+                        <label class="form-check-label">
+                            <span x-text="schedule.publish.enabled ? '활성' : '비활성'"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">발행 시간대 (최대 3개)</label>
+                    <template x-for="(time, index) in schedule.publish.times" :key="index">
+                        <div class="input-group mb-2">
+                            <input type="time" class="form-control" x-model="schedule.publish.times[index]">
+                            <button class="btn btn-outline-danger" type="button" @click="removePublishTime(index)">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </template>
+                    <button class="btn btn-sm btn-outline-primary" @click="addPublishTime()" x-show="schedule.publish.times.length < 3">
+                        <i class="bi bi-plus"></i>
+                        시간 추가
+                    </button>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">요일 선택</label>
+                    <div class="btn-group d-flex" role="group">
+                        <template x-for="day in ['월', '화', '수', '목', '금', '토', '일']" :key="day">
+                            <button type="button" class="btn btn-sm"
+                                    :class="schedule.publish.days.includes(day) ? 'btn-success' : 'btn-outline-secondary'"
+                                    @click="toggleDay(day)"
+                                    x-text="day"></button>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">일일 최대 발행 수</label>
+                    <input type="number" class="form-control" x-model.number="schedule.publish.max_per_day" min="1" max="5">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 모니터링 스케줄 -->
+    <div class="col-md-4 mb-4">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-graph-up"></i>
+                    모니터링 스케줄
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">활성화</label>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" x-model="schedule.monitor.enabled">
+                        <label class="form-check-label">
+                            <span x-text="schedule.monitor.enabled ? '활성' : '비활성'"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">순위 체크 시간</label>
+                    <input type="time" class="form-control" x-model="schedule.monitor.time">
+                    <small class="text-muted">매일 네이버 검색 순위를 확인합니다</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">다음 실행</label>
+                    <p class="text-muted" x-text="getNextRun(schedule.monitor.time)"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 저장 버튼 -->
+<div class="row mb-4">
+    <div class="col">
+        <div class="d-flex justify-content-end gap-2">
+            <button class="btn btn-secondary" @click="loadSchedule()">
+                <i class="bi bi-arrow-clockwise"></i>
+                초기화
+            </button>
+            <button class="btn btn-primary" @click="saveSchedule()" :disabled="saving">
+                <span x-show="!saving">
+                    <i class="bi bi-save"></i>
+                    저장
+                </span>
+                <span x-show="saving">
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                    저장 중...
+                </span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 월별 발행 계획 (캘린더 뷰) -->
+<div class="row">
+    <div class="col">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-calendar3"></i>
+                    월별 발행 계획
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <button class="btn btn-sm btn-outline-secondary" @click="previousMonth()">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <h5 class="mb-0" x-text="getCurrentMonthLabel()"></h5>
+                    <button class="btn btn-sm btn-outline-secondary" @click="nextMonth()">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+
+                <table class="table table-bordered text-center">
+                    <thead>
+                        <tr>
+                            <th class="text-danger">일</th>
+                            <th>월</th>
+                            <th>화</th>
+                            <th>수</th>
+                            <th>목</th>
+                            <th>금</th>
+                            <th class="text-primary">토</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="week in getCalendarWeeks()" :key="week[0]">
+                            <tr>
+                                <template x-for="day in week" :key="day">
+                                    <td :class="{'bg-light': day === null, 'bg-success bg-opacity-10': isPublishDay(day)}">
+                                        <div x-show="day !== null">
+                                            <div x-text="day"></div>
+                                            <small class="text-success" x-show="isPublishDay(day)">
+                                                <i class="bi bi-check-circle"></i>
+                                                발행
+                                            </small>
+                                        </div>
+                                    </td>
+                                </template>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+
+                <div class="text-muted">
+                    <i class="bi bi-info-circle"></i>
+                    발행 스케줄에 따라 자동으로 포스트가 발행됩니다.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function scheduleManager() {
+    return {
+        schedule: {
+            crawl: {
+                enabled: true,
+                time: '08:00'
+            },
+            publish: {
+                enabled: true,
+                times: ['09:00', '15:00'],
+                days: ['월', '화', '수', '목', '금'],
+                max_per_day: 2
+            },
+            monitor: {
+                enabled: true,
+                time: '18:00'
+            }
+        },
+        saving: false,
+        currentMonth: new Date(),
+
+        async init() {
+            await this.loadSchedule();
+        },
+
+        async loadSchedule() {
+            try {
+                const response = await fetch('/api/schedule');
+                if (response.ok) {
+                    const data = await response.json();
+                    this.schedule = data;
+                }
+            } catch (error) {
+                console.error('스케줄 로드 실패:', error);
+            }
+        },
+
+        async saveSchedule() {
+            this.saving = true;
+            try {
+                const response = await fetch('/api/schedule', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(this.schedule)
+                });
+
+                if (response.ok) {
+                    alert('스케줄이 저장되었습니다.');
+                } else {
+                    const data = await response.json();
+                    alert('오류: ' + data.message);
+                }
+            } catch (error) {
+                alert('오류: ' + error.message);
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        addPublishTime() {
+            if (this.schedule.publish.times.length < 3) {
+                this.schedule.publish.times.push('12:00');
+            }
+        },
+
+        removePublishTime(index) {
+            this.schedule.publish.times.splice(index, 1);
+        },
+
+        toggleDay(day) {
+            const index = this.schedule.publish.days.indexOf(day);
+            if (index > -1) {
+                this.schedule.publish.days.splice(index, 1);
+            } else {
+                this.schedule.publish.days.push(day);
+            }
+        },
+
+        getNextRun(time) {
+            const now = new Date();
+            const [hours, minutes] = time.split(':');
+            const nextRun = new Date();
+            nextRun.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+
+            if (nextRun <= now) {
+                nextRun.setDate(nextRun.getDate() + 1);
+            }
+
+            return nextRun.toLocaleString('ko-KR', {
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        },
+
+        previousMonth() {
+            this.currentMonth = new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth() - 1, 1);
+        },
+
+        nextMonth() {
+            this.currentMonth = new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth() + 1, 1);
+        },
+
+        getCurrentMonthLabel() {
+            return this.currentMonth.toLocaleDateString('ko-KR', {
+                year: 'numeric',
+                month: 'long'
+            });
+        },
+
+        getCalendarWeeks() {
+            const year = this.currentMonth.getFullYear();
+            const month = this.currentMonth.getMonth();
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+
+            const weeks = [];
+            let week = [];
+
+            // 첫 주 앞 빈칸
+            for (let i = 0; i < firstDay.getDay(); i++) {
+                week.push(null);
+            }
+
+            // 날짜 채우기
+            for (let date = 1; date <= lastDay.getDate(); date++) {
+                week.push(date);
+                if (week.length === 7) {
+                    weeks.push(week);
+                    week = [];
+                }
+            }
+
+            // 마지막 주 뒤 빈칸
+            if (week.length > 0) {
+                while (week.length < 7) {
+                    week.push(null);
+                }
+                weeks.push(week);
+            }
+
+            return weeks;
+        },
+
+        isPublishDay(day) {
+            if (day === null) return false;
+
+            const date = new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth(), day);
+            const dayName = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
+
+            return this.schedule.publish.enabled && this.schedule.publish.days.includes(dayName);
+        }
+    }
+}
+</script>
+{% endblock %}

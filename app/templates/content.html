@@ -1,0 +1,984 @@
+{% extends "base.html" %}
+
+{% block title %}콘텐츠 관리 - 네이버 블로그 자동화{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h3">
+            <i class="bi bi-file-earmark-text"></i>
+            콘텐츠 관리
+        </h1>
+    </div>
+</div>
+
+<div class="row" x-data="contentManager()">
+    <div class="col">
+        <div class="card">
+            <div class="card-header">
+                <ul class="nav nav-tabs card-header-tabs">
+                    <li class="nav-item">
+                        <a class="nav-link" :class="{ 'active': activeTab === 'all' }" href="#" @click.prevent="switchTab('all')">
+                            전체 (<span x-text="counts.all"></span>)
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" :class="{ 'active': activeTab === 'draft' }" href="#" @click.prevent="switchTab('draft')">
+                            초안 (<span x-text="counts.draft"></span>)
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" :class="{ 'active': activeTab === 'approved' }" href="#" @click.prevent="switchTab('approved')">
+                            승인 (<span x-text="counts.approved"></span>)
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" :class="{ 'active': activeTab === 'published' }" href="#" @click.prevent="switchTab('published')">
+                            발행 (<span x-text="counts.published"></span>)
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            <div class="card-body">
+                <!-- 검색 및 필터 -->
+                <div class="row mb-3">
+                    <div class="col-md-8">
+                        <input type="text" class="form-control" placeholder="제목 또는 키워드 검색..." x-model="searchQuery" @input.debounce.500ms="loadPosts()">
+                    </div>
+                    <div class="col-md-4">
+                        <select class="form-select" x-model="sortBy" @change="loadPosts()">
+                            <option value="created_at_desc">최신순</option>
+                            <option value="created_at_asc">오래된순</option>
+                            <option value="seo_score_desc">SEO 점수 높은순</option>
+                            <option value="seo_score_asc">SEO 점수 낮은순</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 로딩 상태 -->
+                <div x-show="posts.length === 0 && !error" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">로딩 중...</span>
+                    </div>
+                    <p class="mt-3 text-muted">포스트를 불러오는 중...</p>
+                </div>
+
+                <!-- 에러 상태 -->
+                <div x-show="error" class="alert alert-danger" role="alert">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <span x-text="error"></span>
+                </div>
+
+                <!-- 포스트 목록 -->
+                <div class="table-responsive" x-show="posts.length > 0 && !error">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th width="5%">ID</th>
+                                <th width="40%">제목</th>
+                                <th width="12%">키워드</th>
+                                <th width="10%">SEO</th>
+                                <th width="10%">상태</th>
+                                <th width="13%">생성일</th>
+                                <th width="10%">액션</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="post in posts" :key="post.id">
+                                <tr>
+                                    <td x-text="post.id"></td>
+                                    <td>
+                                        <div class="text-truncate" style="max-width: 400px;" x-text="post.title"></div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info" x-text="post.keyword"></span>
+                                    </td>
+                                    <td>
+                                        <span class="badge"
+                                              :class="getScoreBadgeClass(post.seo_score)"
+                                              x-text="post.seo_score + '점'"></span>
+                                    </td>
+                                    <td>
+                                        <span class="badge"
+                                              :class="getStatusBadgeClass(post.status)"
+                                              x-text="getStatusLabel(post.status)"></span>
+                                    </td>
+                                    <td>
+                                        <small x-text="formatDate(post.created_at)"></small>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-primary" @click="viewPost(post.id)" title="미리보기">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                            <button class="btn btn-outline-secondary" @click="editPost(post.id)" title="수정"
+                                                    x-show="post.status !== 'published'">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <button class="btn btn-outline-success" @click="legalPost(post.id)" title="법령 검증">
+                                                <i class="bi bi-shield-check"></i>
+                                            </button>
+                                            <!-- 승인 버튼 (draft일 때만) -->
+                                            <button class="btn btn-primary btn-sm" @click="approvePost(post.id)"
+                                                    x-show="post.status === 'draft'" title="승인">
+                                                <i class="bi bi-check-lg"></i>
+                                            </button>
+                                            <!-- 반려 버튼 (approved일 때만) -->
+                                            <button class="btn btn-outline-secondary btn-sm" @click="rejectPost(post.id)"
+                                                    x-show="post.status === 'approved'" title="반려">
+                                                <i class="bi bi-x-lg"></i>
+                                            </button>
+                                            <!-- 발행 버튼 (approved일 때만) -->
+                                            <button class="btn btn-success btn-sm" @click="publishPost(post.id)"
+                                                    x-show="post.status === 'approved'" title="네이버 발행">
+                                                <i class="bi bi-send"></i>
+                                            </button>
+                                            <!-- 발행 링크 (published일 때) -->
+                                            <button class="btn btn-outline-warning" @click="regeneratePost(post.id)" title="재생성"
+                                                    x-show="post.seo_score < 70 && post.status === 'draft'">
+                                                <i class="bi bi-arrow-clockwise"></i>
+                                            </button>
+                                            <button class="btn btn-outline-danger" @click="deletePost(post.id)" title="삭제"
+                                                    x-show="post.status !== 'published'">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <template x-if="posts.length === 0">
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted py-4">
+                                        포스트가 없습니다
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 페이지네이션 -->
+                <nav x-show="totalPages > 1">
+                    <ul class="pagination justify-content-center">
+                        <li class="page-item" :class="{ 'disabled': currentPage === 1 }">
+                            <a class="page-link" href="#" @click.prevent="loadPosts(currentPage - 1)">이전</a>
+                        </li>
+                        <template x-for="page in getPaginationPages()" :key="page">
+                            <li class="page-item" :class="{ 'active': page === currentPage }">
+                                <a class="page-link" href="#" @click.prevent="loadPosts(page)" x-text="page"></a>
+                            </li>
+                        </template>
+                        <li class="page-item" :class="{ 'disabled': currentPage === totalPages }">
+                            <a class="page-link" href="#" @click.prevent="loadPosts(currentPage + 1)">다음</a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 미리보기 모달 -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content" x-data="previewModal()">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-eye"></i>
+                    포스트 미리보기
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <template x-if="loading">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary"></div>
+                        <p class="mt-2">로딩 중...</p>
+                    </div>
+                </template>
+
+                <template x-if="!loading && post">
+                    <div>
+                        <!-- 포스트 정보 -->
+                        <div class="mb-3">
+                            <h4 x-text="post.title"></h4>
+                            <div class="d-flex gap-2 align-items-center">
+                                <span class="badge bg-info" x-text="post.keyword"></span>
+                                <span class="badge" :class="getScoreBadgeClass(post.seo_score)" x-text="`SEO: ${post.seo_score}점`"></span>
+                                <span class="badge" :class="getStatusBadgeClass(post.status)" x-text="getStatusLabel(post.status)"></span>
+                                <small class="text-muted" x-text="`생성일: ${formatDate(post.created_at)}`"></small>
+                            </div>
+                        </div>
+
+                        <!-- HTML 미리보기 -->
+                        <div class="border rounded p-3 bg-white" style="max-height: 600px; overflow-y: auto;">
+                            <div x-html="post.html_body"></div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 발행 모달 -->
+<div class="modal fade" id="publishModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content" x-data="publishModal()">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-send text-success"></i>
+                    네이버 블로그 발행
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <template x-if="!publishing && !result">
+                    <div>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Playwright로 네이버 블로그에 자동 발행합니다.
+                            네이버 로그인 쿠키가 없으면 수동 로그인이 필요합니다.
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">포스트 제목</label>
+                            <p class="text-muted" x-text="postTitle"></p>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">발행 카테고리 (선택)</label>
+                            <input type="text" class="form-control" x-model="category"
+                                   placeholder="예: 계약/조달 (비워두면 미분류)">
+                        </div>
+                    </div>
+                </template>
+
+                <template x-if="publishing">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-success mb-3"></div>
+                        <p class="fw-bold">네이버 블로그에 발행 중...</p>
+                        <p class="text-muted small">브라우저가 자동으로 실행되어 포스트를 작성합니다.<br>최대 2분 소요될 수 있습니다.</p>
+                    </div>
+                </template>
+
+                <template x-if="result">
+                    <div>
+                        <template x-if="result.success">
+                            <div class="text-center py-3">
+                                <i class="bi bi-check-circle-fill text-success" style="font-size:3rem"></i>
+                                <p class="fw-bold mt-3">발행 완료!</p>
+                                <a :href="result.blog_url" target="_blank" class="btn btn-outline-primary btn-sm mt-2">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>블로그에서 보기
+                                </a>
+                            </div>
+                        </template>
+                        <template x-if="!result.success">
+                            <div class="alert alert-danger">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                <strong>발행 실패:</strong> <span x-text="result.error"></span>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"
+                        @click="reset()">
+                    <span x-text="result ? '닫기' : '취소'"></span>
+                </button>
+                <button type="button" class="btn btn-success" @click="doPublish()"
+                        x-show="!publishing && !result" :disabled="publishing">
+                    <i class="bi bi-send me-1"></i>발행 시작
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 법령 검증 모달 -->
+<div class="modal fade" id="legalModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" x-data="legalModal()">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-shield-check text-success"></i>
+                    법령 인용 검증
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <template x-if="loading">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary"></div>
+                        <p class="mt-2 text-muted">법령 인용 분석 중...</p>
+                    </div>
+                </template>
+
+                <template x-if="!loading">
+                    <div>
+                        <!-- 요약 -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-3">
+                                <div class="card text-center border-0 bg-light">
+                                    <div class="card-body py-2">
+                                        <div class="fs-4 fw-bold" x-text="summary.total || 0"></div>
+                                        <small class="text-muted">전체</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-3">
+                                <div class="card text-center border-0 bg-success bg-opacity-10">
+                                    <div class="card-body py-2">
+                                        <div class="fs-4 fw-bold text-success" x-text="summary.verified || 0"></div>
+                                        <small class="text-muted">검증됨</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-3">
+                                <div class="card text-center border-0 bg-warning bg-opacity-10">
+                                    <div class="card-body py-2">
+                                        <div class="fs-4 fw-bold text-warning" x-text="summary.warning || 0"></div>
+                                        <small class="text-muted">경고</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-3">
+                                <div class="card text-center border-0 bg-danger bg-opacity-10">
+                                    <div class="card-body py-2">
+                                        <div class="fs-4 fw-bold text-danger" x-text="summary.failed || 0"></div>
+                                        <small class="text-muted">오류</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 인용 없음 -->
+                        <template x-if="citations.length === 0 && !verifying">
+                            <div class="text-center py-4 text-muted">
+                                <i class="bi bi-info-circle fs-3 d-block mb-2"></i>
+                                <p>법령 인용이 없거나 아직 추출되지 않았습니다.</p>
+                                <button class="btn btn-outline-primary btn-sm" @click="extractCitations()">
+                                    <i class="bi bi-search me-1"></i>법령 인용 추출
+                                </button>
+                            </div>
+                        </template>
+
+                        <!-- 검증 진행 중 -->
+                        <template x-if="verifying">
+                            <div class="text-center py-3">
+                                <div class="spinner-border spinner-border-sm text-success me-2"></div>
+                                <span>Claude AI로 법령 검증 중... (최대 30초)</span>
+                            </div>
+                        </template>
+
+                        <!-- 인용 목록 -->
+                        <template x-if="citations.length > 0">
+                            <div>
+                                <div class="list-group">
+                                    <template x-for="c in citations" :key="c.id">
+                                        <div class="list-group-item">
+                                            <div class="d-flex justify-content-between align-items-start">
+                                                <div class="flex-grow-1">
+                                                    <div class="d-flex align-items-center gap-2 mb-1">
+                                                        <span class="badge" :class="getStatusBadge(c.verification_status)"
+                                                              x-text="getStatusLabel(c.verification_status)"></span>
+                                                        <strong x-text="c.law_name"></strong>
+                                                        <span class="text-muted" x-show="c.article_number" x-text="c.article_number"></span>
+                                                    </div>
+                                                    <div class="text-muted small">
+                                                        <i class="bi bi-quote me-1"></i>
+                                                        <span x-text="c.citation_text"></span>
+                                                    </div>
+                                                    <div x-show="c.last_check_details" class="mt-1">
+                                                        <small class="text-info">
+                                                            <i class="bi bi-info-circle me-1"></i>
+                                                            <span x-text="c.last_check_details"></span>
+                                                        </small>
+                                                    </div>
+                                                </div>
+                                                <span class="badge bg-light text-dark ms-2" x-text="`#${c.id}`"></span>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+                <button type="button" class="btn btn-outline-primary" @click="extractCitations()" :disabled="verifying">
+                    <i class="bi bi-search me-1"></i>재추출
+                </button>
+                <button type="button" class="btn btn-success" @click="verifyCitations()"
+                        :disabled="citations.length === 0 || verifying">
+                    <span x-show="!verifying"><i class="bi bi-shield-check me-1"></i>AI 검증 실행</span>
+                    <span x-show="verifying">
+                        <span class="spinner-border spinner-border-sm me-1"></span>검증 중...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 수정 모달 -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content" x-data="editModal()">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-pencil"></i>
+                    포스트 수정
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <template x-if="loading">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary"></div>
+                    </div>
+                </template>
+
+                <template x-if="!loading && post">
+                    <div>
+                        <div class="mb-3">
+                            <label class="form-label">제목</label>
+                            <input type="text" class="form-control" x-model="post.title">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">본문 (마크다운)</label>
+                            <textarea class="form-control" rows="20" x-model="post.body"></textarea>
+                            <small class="text-muted">수정 후 HTML은 자동 생성됩니다.</small>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary" @click="savePost()" :disabled="saving">
+                    <span x-show="!saving">저장</span>
+                    <span x-show="saving">
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                        저장 중...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 콘텐츠 관리자
+function contentManager() {
+    return {
+        activeTab: 'all',
+        posts: [],
+        counts: {
+            all: 0,
+            draft: 0,
+            approved: 0,
+            published: 0
+        },
+        searchQuery: '',
+        sortBy: 'created_at_desc',
+        currentPage: 1,
+        totalPages: 1,
+        error: null,
+
+        async init() {
+            try {
+                await this.loadCounts();
+                await this.loadPosts();
+            } catch (err) {
+                console.error('초기화 실패:', err);
+                this.error = '데이터를 불러오는 중 오류가 발생했습니다: ' + err.message;
+            }
+        },
+
+        async loadCounts() {
+            try {
+                const response = await fetch('/api/stats');
+                if (!response.ok) throw new Error('통계 조회 실패');
+                const stats = await response.json();
+                this.counts.all = stats.total_posts;
+                this.counts.draft = stats.draft_posts;
+                this.counts.approved = stats.approved_posts;
+                this.counts.published = stats.published_posts;
+            } catch (err) {
+                console.error('통계 로드 실패:', err);
+                throw err;
+            }
+        },
+
+        async switchTab(tab) {
+            this.activeTab = tab;
+            this.currentPage = 1;
+            await this.loadPosts();
+        },
+
+        async loadPosts(page = 1) {
+            try {
+                this.currentPage = page;
+                this.error = null;
+
+                const params = new URLSearchParams({
+                    page: this.currentPage,
+                    limit: 20,
+                    status: this.activeTab === 'all' ? '' : this.activeTab
+                });
+
+                const response = await fetch(`/api/posts?${params}`);
+                if (!response.ok) throw new Error('포스트 조회 실패');
+
+                const data = await response.json();
+                this.posts = data.posts || [];
+                this.totalPages = data.total_pages || 1;
+            } catch (err) {
+                console.error('포스트 로드 실패:', err);
+                this.error = '포스트를 불러오는 중 오류가 발생했습니다: ' + err.message;
+                this.posts = [];
+            }
+        },
+
+        getPaginationPages() {
+            const pages = [];
+            const maxPages = 5;
+            let start = Math.max(1, this.currentPage - 2);
+            let end = Math.min(this.totalPages, start + maxPages - 1);
+
+            if (end - start < maxPages - 1) {
+                start = Math.max(1, end - maxPages + 1);
+            }
+
+            for (let i = start; i <= end; i++) {
+                pages.push(i);
+            }
+            return pages;
+        },
+
+        viewPost(postId) {
+            const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+            modal.show();
+            Alpine.store('currentPostId', postId);
+        },
+
+        editPost(postId) {
+            const modal = new bootstrap.Modal(document.getElementById('editModal'));
+            modal.show();
+            Alpine.store('currentPostId', postId);
+        },
+
+        legalPost(postId) {
+            const modal = new bootstrap.Modal(document.getElementById('legalModal'));
+            modal.show();
+            Alpine.store('currentPostId', postId);
+        },
+
+        async approvePost(postId) {
+            if (!confirm('이 포스트를 승인하시겠습니까?')) return;
+            try {
+                const res = await fetch(`/api/posts/${postId}/approve`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    await this.loadPosts(this.currentPage);
+                    await this.loadCounts();
+                } else {
+                    alert('오류: ' + data.error);
+                }
+            } catch (e) { alert('오류: ' + e.message); }
+        },
+
+        async rejectPost(postId) {
+            if (!confirm('승인을 취소하고 초안으로 되돌리겠습니까?')) return;
+            try {
+                const res = await fetch(`/api/posts/${postId}/reject`, { method: 'POST' });
+                if (res.ok) {
+                    await this.loadPosts(this.currentPage);
+                    await this.loadCounts();
+                } else {
+                    const data = await res.json();
+                    alert('오류: ' + data.error);
+                }
+            } catch (e) { alert('오류: ' + e.message); }
+        },
+
+        publishPost(postId) {
+            Alpine.store('publishPostId', postId);
+            const post = this.posts.find(p => p.id === postId);
+            Alpine.store('publishPostTitle', post?.title || '');
+            const modal = new bootstrap.Modal(document.getElementById('publishModal'));
+            modal.show();
+        },
+
+        async regeneratePost(postId) {
+            if (!confirm('이 포스트를 재생성하시겠습니까? (비용이 발생합니다)')) return;
+
+            try {
+                const response = await fetch(`/api/posts/${postId}/regenerate`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    alert('포스트 재생성이 시작되었습니다. 워크플로우 페이지에서 진행 상황을 확인하세요.');
+                    window.location.href = '/workflow';
+                } else {
+                    const data = await response.json();
+                    alert('오류: ' + data.message);
+                }
+            } catch (error) {
+                alert('오류: ' + error.message);
+            }
+        },
+
+        async deletePost(postId) {
+            if (!confirm('정말로 이 포스트를 삭제하시겠습니까? (복구 불가능)')) return;
+
+            try {
+                const response = await fetch(`/api/posts/${postId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    alert('포스트가 삭제되었습니다.');
+                    await this.loadPosts();
+                } else {
+                    const data = await response.json();
+                    alert('오류: ' + data.message);
+                }
+            } catch (error) {
+                alert('오류: ' + error.message);
+            }
+        },
+
+        getScoreBadgeClass(score) {
+            if (score >= 90) return 'bg-success';
+            if (score >= 70) return 'bg-warning';
+            return 'bg-danger';
+        },
+
+        getStatusBadgeClass(status) {
+            const classes = {
+                'draft': 'bg-secondary',
+                'approved': 'bg-primary',
+                'published': 'bg-success',
+                'rejected': 'bg-danger'
+            };
+            return classes[status] || 'bg-secondary';
+        },
+
+        getStatusLabel(status) {
+            const labels = {
+                'draft': '초안',
+                'approved': '승인',
+                'published': '발행',
+                'rejected': '거부'
+            };
+            return labels[status] || status;
+        },
+
+        formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleString('ko-KR', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+    }
+}
+
+// 미리보기 모달
+function previewModal() {
+    return {
+        loading: false,
+        post: null,
+
+        async init() {
+            this.$watch('$store.currentPostId', async (postId) => {
+                if (postId) {
+                    await this.loadPost(postId);
+                }
+            });
+        },
+
+        async loadPost(postId) {
+            this.loading = true;
+            try {
+                const response = await fetch(`/api/posts/${postId}`);
+                this.post = await response.json();
+            } catch (error) {
+                alert('오류: ' + error.message);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        getScoreBadgeClass(score) {
+            if (score >= 90) return 'bg-success';
+            if (score >= 70) return 'bg-warning';
+            return 'bg-danger';
+        },
+
+        getStatusBadgeClass(status) {
+            const classes = {
+                'draft': 'bg-secondary',
+                'approved': 'bg-primary',
+                'published': 'bg-success',
+                'rejected': 'bg-danger'
+            };
+            return classes[status] || 'bg-secondary';
+        },
+
+        getStatusLabel(status) {
+            const labels = {
+                'draft': '초안',
+                'approved': '승인',
+                'published': '발행',
+                'rejected': '거부'
+            };
+            return labels[status] || status;
+        },
+
+        formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleString('ko-KR');
+        }
+    }
+}
+
+// 수정 모달
+function editModal() {
+    return {
+        loading: false,
+        saving: false,
+        post: null,
+
+        async init() {
+            this.$watch('$store.currentPostId', async (postId) => {
+                if (postId) {
+                    await this.loadPost(postId);
+                }
+            });
+        },
+
+        async loadPost(postId) {
+            this.loading = true;
+            try {
+                const response = await fetch(`/api/posts/${postId}`);
+                this.post = await response.json();
+            } catch (error) {
+                alert('오류: ' + error.message);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async savePost() {
+            if (!this.post) return;
+
+            this.saving = true;
+            try {
+                const response = await fetch(`/api/posts/${this.post.id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        title: this.post.title,
+                        body: this.post.body
+                    })
+                });
+
+                if (response.ok) {
+                    alert('포스트가 수정되었습니다.');
+                    bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+                    location.reload();
+                } else {
+                    const data = await response.json();
+                    alert('오류: ' + data.message);
+                }
+            } catch (error) {
+                alert('오류: ' + error.message);
+            } finally {
+                this.saving = false;
+            }
+        }
+    }
+}
+
+// 발행 모달
+function publishModal() {
+    return {
+        postId: null,
+        postTitle: '',
+        category: '',
+        publishing: false,
+        result: null,
+
+        init() {
+            document.getElementById('publishModal').addEventListener('show.bs.modal', () => {
+                this.postId = Alpine.store('publishPostId');
+                this.postTitle = Alpine.store('publishPostTitle');
+                this.result = null;
+                this.publishing = false;
+                this.category = '';
+            });
+
+            // SSE로 발행 완료 이벤트 수신
+            if (window.sseSource) {
+                window.sseSource.addEventListener('message', (e) => {
+                    try {
+                        const ev = JSON.parse(e.data);
+                        if (ev.type === 'publish.completed' && ev.data.post_id === this.postId) {
+                            this.publishing = false;
+                            this.result = { success: true, blog_url: ev.data.blog_url };
+                            Alpine.store('contentRefresh', Date.now());
+                        } else if (ev.type === 'publish.failed' && ev.data.post_id === this.postId) {
+                            this.publishing = false;
+                            this.result = { success: false, error: ev.data.error };
+                        }
+                    } catch {}
+                });
+            }
+        },
+
+        async doPublish() {
+            this.publishing = true;
+            try {
+                const res = await fetch(`/api/posts/${this.postId}/publish`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category: this.category })
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    this.publishing = false;
+                    this.result = { success: false, error: data.error };
+                }
+                // 성공 시 SSE로 완료 이벤트 수신 대기
+            } catch (e) {
+                this.publishing = false;
+                this.result = { success: false, error: e.message };
+            }
+        },
+
+        reset() {
+            this.result = null;
+            this.publishing = false;
+        }
+    }
+}
+
+// 법령 검증 모달
+function legalModal() {
+    return {
+        loading: false,
+        verifying: false,
+        postId: null,
+        citations: [],
+        summary: { total: 0, verified: 0, warning: 0, failed: 0, pending: 0 },
+
+        async init() {
+            this.$watch('$store.currentPostId', async (postId) => {
+                if (postId && document.getElementById('legalModal').classList.contains('show')) {
+                    this.postId = postId;
+                    await this.loadCitations();
+                }
+            });
+
+            document.getElementById('legalModal').addEventListener('show.bs.modal', async () => {
+                this.postId = Alpine.store('currentPostId');
+                if (this.postId) await this.loadCitations();
+            });
+        },
+
+        async loadCitations() {
+            this.loading = true;
+            try {
+                const res = await fetch(`/api/posts/${this.postId}/legal`);
+                const data = await res.json();
+                this.citations = data.citations || [];
+                this.summary = { ...data.summary, total: data.total };
+            } catch (e) {
+                console.error('법령 인용 로드 실패:', e);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async extractCitations() {
+            this.loading = true;
+            try {
+                const res = await fetch(`/api/posts/${this.postId}/legal/extract`, { method: 'POST' });
+                const data = await res.json();
+                await this.loadCitations();
+            } catch (e) {
+                alert('추출 실패: ' + e.message);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async verifyCitations() {
+            this.verifying = true;
+            try {
+                const res = await fetch(`/api/posts/${this.postId}/legal/verify`, { method: 'POST' });
+                if (!res.ok) { alert('검증 실패'); return; }
+
+                // 검증 완료 대기 (SSE 대신 폴링)
+                let attempts = 0;
+                const poll = setInterval(async () => {
+                    attempts++;
+                    await this.loadCitations();
+                    const pending = this.summary.pending || 0;
+                    if (pending === 0 || attempts > 12) {
+                        clearInterval(poll);
+                        this.verifying = false;
+                    }
+                }, 3000);
+            } catch (e) {
+                alert('검증 실패: ' + e.message);
+                this.verifying = false;
+            }
+        },
+
+        getStatusBadge(status) {
+            const map = {
+                'pending': 'bg-secondary',
+                'verified': 'bg-success',
+                'failed': 'bg-danger',
+                'warning': 'bg-warning text-dark',
+            };
+            return map[status] || 'bg-secondary';
+        },
+
+        getStatusLabel(status) {
+            const map = {
+                'pending': '미검증',
+                'verified': '검증됨',
+                'failed': '오류',
+                'warning': '주의',
+            };
+            return map[status] || status;
+        },
+    }
+}
+
+// Alpine.js 전역 스토어
+document.addEventListener('alpine:init', () => {
+    Alpine.store('currentPostId', null);
+    Alpine.store('publishPostId', null);
+    Alpine.store('publishPostTitle', '');
+    Alpine.store('contentRefresh', null);
+});
+</script>
+{% endblock %}

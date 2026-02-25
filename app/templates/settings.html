@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block title %}설정 - 네이버 블로그 자동화{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h3">
+            <i class="bi bi-gear"></i>
+            설정
+        </h1>
+    </div>
+</div>
+
+<div class="row" x-data="settingsManager()">
+    <!-- API 키 관리 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-key"></i>
+                    API 키 관리
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Claude API Key</label>
+                    <div class="input-group">
+                        <input :type="showKeys.claude ? 'text' : 'password'"
+                               class="form-control font-monospace"
+                               x-model="settings.api_keys.claude"
+                               placeholder="sk-ant-...">
+                        <button class="btn btn-outline-secondary" type="button" @click="showKeys.claude = !showKeys.claude">
+                            <i class="bi" :class="showKeys.claude ? 'bi-eye-slash' : 'bi-eye'"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Gemini API Key</label>
+                    <div class="input-group">
+                        <input :type="showKeys.gemini ? 'text' : 'password'"
+                               class="form-control font-monospace"
+                               x-model="settings.api_keys.gemini"
+                               placeholder="AIzaSy...">
+                        <button class="btn btn-outline-secondary" type="button" @click="showKeys.gemini = !showKeys.gemini">
+                            <i class="bi" :class="showKeys.gemini ? 'bi-eye-slash' : 'bi-eye'"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Naver Client ID</label>
+                    <input type="text" class="form-control" x-model="settings.api_keys.naver_client_id">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Naver Client Secret</label>
+                    <div class="input-group">
+                        <input :type="showKeys.naver ? 'text' : 'password'"
+                               class="form-control"
+                               x-model="settings.api_keys.naver_client_secret">
+                        <button class="btn btn-outline-secondary" type="button" @click="showKeys.naver = !showKeys.naver">
+                            <i class="bi" :class="showKeys.naver ? 'bi-eye-slash' : 'bi-eye'"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 발행 제한 설정 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-sliders"></i>
+                    발행 제한
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">일일 최대 발행 수</label>
+                    <input type="number" class="form-control" x-model.number="settings.limits.max_posts_per_day" min="1" max="10">
+                    <small class="text-muted">어뷰징 방지를 위해 하루 최대 발행 수를 제한합니다</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">주간 최대 발행 수</label>
+                    <input type="number" class="form-control" x-model.number="settings.limits.max_posts_per_week" min="1" max="30">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">최소 발행 간격 (시간)</label>
+                    <input type="number" class="form-control" x-model.number="settings.limits.min_interval_hours" min="1" max="24">
+                    <small class="text-muted">포스트 간 최소 간격을 설정합니다</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 품질 기준 설정 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-check-circle"></i>
+                    품질 기준
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">최소 SEO 점수</label>
+                    <input type="number" class="form-control" x-model.number="settings.quality.min_seo_score" min="50" max="100">
+                    <small class="text-muted">이 점수 미만일 경우 자동 재생성됩니다</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">최소 휴먼 점수</label>
+                    <input type="number" class="form-control" x-model.number="settings.quality.min_human_score" min="50" max="100">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">표절 임계값 (%)</label>
+                    <input type="number" class="form-control" x-model.number="settings.quality.plagiarism_threshold" min="10" max="50" step="5">
+                    <small class="text-muted">이 값 이상일 경우 포스트를 거부합니다</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">최대 재생성 횟수</label>
+                    <input type="number" class="form-control" x-model.number="settings.quality.max_regeneration" min="1" max="5">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 알림 설정 -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-bell"></i>
+                    알림 설정
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" x-model="settings.notifications.on_error">
+                        <label class="form-check-label">
+                            오류 발생 시 알림
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" x-model="settings.notifications.on_publish">
+                        <label class="form-check-label">
+                            포스트 발행 시 알림
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" x-model="settings.notifications.on_rank_change">
+                        <label class="form-check-label">
+                            순위 변동 시 알림
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" x-model="settings.notifications.on_budget_warning">
+                        <label class="form-check-label">
+                            예산 80% 도달 시 알림
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">알림 방법 (향후 구현)</label>
+                    <select class="form-select" disabled>
+                        <option>UI 알림</option>
+                        <option>이메일</option>
+                        <option>슬랙</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 저장 버튼 -->
+<div class="row">
+    <div class="col">
+        <div class="d-flex justify-content-end gap-2">
+            <button class="btn btn-secondary" @click="loadSettings()">
+                <i class="bi bi-arrow-clockwise"></i>
+                초기화
+            </button>
+            <button class="btn btn-primary" @click="saveSettings()" :disabled="saving">
+                <span x-show="!saving">
+                    <i class="bi bi-save"></i>
+                    저장
+                </span>
+                <span x-show="saving">
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                    저장 중...
+                </span>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function settingsManager() {
+    return {
+        settings: {
+            api_keys: {
+                claude: '',
+                gemini: '',
+                naver_client_id: '',
+                naver_client_secret: ''
+            },
+            limits: {
+                max_posts_per_day: 2,
+                max_posts_per_week: 5,
+                min_interval_hours: 4
+            },
+            quality: {
+                min_seo_score: 70,
+                min_human_score: 90,
+                plagiarism_threshold: 30,
+                max_regeneration: 3
+            },
+            notifications: {
+                on_error: true,
+                on_publish: true,
+                on_rank_change: true,
+                on_budget_warning: true
+            }
+        },
+        showKeys: {
+            claude: false,
+            gemini: false,
+            naver: false
+        },
+        saving: false,
+
+        async init() {
+            await this.loadSettings();
+        },
+
+        async loadSettings() {
+            try {
+                const response = await fetch('/api/settings');
+                if (response.ok) {
+                    const data = await response.json();
+                    this.settings = data;
+                }
+            } catch (error) {
+                console.error('설정 로드 실패:', error);
+            }
+        },
+
+        async saveSettings() {
+            this.saving = true;
+            try {
+                const response = await fetch('/api/settings', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(this.settings)
+                });
+
+                if (response.ok) {
+                    alert('설정이 저장되었습니다.');
+                } else {
+                    const data = await response.json();
+                    alert('오류: ' + data.message);
+                }
+            } catch (error) {
+                alert('오류: ' + error.message);
+            } finally {
+                this.saving = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

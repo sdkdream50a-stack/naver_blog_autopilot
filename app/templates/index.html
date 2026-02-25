@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}대시보드 - 네이버 블로그 자동화{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h3">
+            <i class="bi bi-speedometer2"></i>
+            대시보드
+        </h1>
+    </div>
+</div>
+
+<!-- 통계 카드 -->
+<div class="row mb-4" x-data="dashboardStats()">
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">총 발행 수</h6>
+                        <h2 class="mb-0" x-text="stats.published_posts"></h2>
+                    </div>
+                    <i class="bi bi-file-earmark-check fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">평균 SEO 점수</h6>
+                        <h2 class="mb-0" x-text="stats.avg_seo_score + '점'"></h2>
+                    </div>
+                    <i class="bi bi-graph-up fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">이번 달 비용</h6>
+                        <h2 class="mb-0" x-text="stats.total_cost + '원'"></h2>
+                    </div>
+                    <i class="bi bi-cash-coin fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">예산 사용률</h6>
+                        <h2 class="mb-0" x-text="stats.budget_usage + '%'"></h2>
+                    </div>
+                    <i class="bi bi-pie-chart fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 차트 -->
+<div class="row mb-4">
+    <div class="col-md-8 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-graph-up"></i>
+                    일별 발행 추이
+                </h5>
+            </div>
+            <div class="card-body">
+                <canvas id="dailyChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4 mb-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-clock-history"></i>
+                    최근 활동
+                </h5>
+            </div>
+            <div class="card-body" x-data="recentActivity()">
+                <div class="list-group list-group-flush">
+                    <template x-for="activity in activities" :key="activity.id">
+                        <div class="list-group-item px-0">
+                            <div class="d-flex align-items-start">
+                                <span class="badge bg-success me-2">발행</span>
+                                <div class="flex-grow-1">
+                                    <p class="mb-1 fw-semibold" x-text="activity.title"></p>
+                                    <small class="text-muted" x-text="activity.timestamp"></small>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <template x-if="activities.length === 0">
+                        <div class="text-center text-muted py-4">
+                            활동 내역이 없습니다
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 빠른 액션 -->
+<div class="row">
+    <div class="col">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-lightning"></i>
+                    빠른 액션
+                </h5>
+            </div>
+            <div class="card-body" x-data="quickActions()">
+                <button class="btn btn-primary me-2" @click="generatePost()" :disabled="isGenerating">
+                    <i class="bi bi-plus-circle"></i>
+                    <span x-show="!isGenerating">포스트 생성</span>
+                    <span x-show="isGenerating">
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                        생성 중...
+                    </span>
+                </button>
+                <button class="btn btn-outline-secondary me-2" onclick="window.location.href='/workflow'">
+                    <i class="bi bi-diagram-3"></i>
+                    워크플로우 보기
+                </button>
+                <button class="btn btn-outline-info me-2" onclick="alert('로그 기능은 향후 구현 예정입니다.')">
+                    <i class="bi bi-file-text"></i>
+                    로그 보기
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Alpine.js 컴포넌트
+function dashboardStats() {
+    return {
+        stats: {},
+        async init() {
+            const response = await fetch('/api/stats');
+            this.stats = await response.json();
+        }
+    }
+}
+
+function recentActivity() {
+    return {
+        activities: [],
+        async init() {
+            const response = await fetch('/api/activity/recent');
+            this.activities = await response.json();
+        }
+    }
+}
+
+function quickActions() {
+    return {
+        isGenerating: false,
+        async generatePost() {
+            if (this.isGenerating) return;
+
+            this.isGenerating = true;
+
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        count: 1,
+                        category: '계약/조달'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert('포스트 생성이 시작되었습니다. 워크플로우 페이지에서 진행 상황을 확인하세요.');
+                    // 워크플로우 페이지로 이동
+                    window.location.href = '/workflow';
+                } else {
+                    alert('오류: ' + data.message);
+                }
+            } catch (error) {
+                alert('오류: ' + error.message);
+            } finally {
+                this.isGenerating = false;
+            }
+        }
+    }
+}
+
+// Chart.js
+document.addEventListener('DOMContentLoaded', async () => {
+    const response = await fetch('/api/chart/daily');
+    const data = await response.json();
+
+    const ctx = document.getElementById('dailyChart');
+    new Chart(ctx, {
+        type: 'line',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

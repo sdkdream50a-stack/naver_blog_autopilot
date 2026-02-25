@@ -1,0 +1,697 @@
+{% extends "base.html" %}
+
+{% block title %}워크플로우 - 네이버 블로그 자동화{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h3">
+            <i class="bi bi-diagram-3"></i>
+            워크플로우 관리
+        </h1>
+    </div>
+</div>
+
+<!-- 현재 진행 중인 작업 -->
+<div class="row mb-4" x-data="workflowProgress()">
+    <div class="col">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-play-circle"></i>
+                    현재 진행 중
+                </h5>
+                <span class="badge bg-primary" x-show="isRunning">진행 중</span>
+                <span class="badge bg-secondary" x-show="!isRunning">대기 중</span>
+            </div>
+            <div class="card-body">
+                <template x-if="isRunning">
+                    <div>
+                        <!-- 진행 단계 -->
+                        <div class="mb-3">
+                            <h6 class="mb-2" x-text="currentTask.title"></h6>
+                            <div class="progress" style="height: 25px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                     role="progressbar"
+                                     :style="`width: ${progress}%`"
+                                     :aria-valuenow="progress"
+                                     aria-valuemin="0"
+                                     aria-valuemax="100">
+                                    <span x-text="`${progress}%`"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 단계별 상태 -->
+                        <div class="row text-center">
+                            <div class="col">
+                                <div class="step" :class="getStepClass(1)">
+                                    <i class="bi bi-download fs-3"></i>
+                                    <p class="mb-0 mt-2 small">크롤링</p>
+                                </div>
+                            </div>
+                            <div class="col">
+                                <div class="step" :class="getStepClass(2)">
+                                    <i class="bi bi-pencil fs-3"></i>
+                                    <p class="mb-0 mt-2 small">생성</p>
+                                </div>
+                            </div>
+                            <div class="col">
+                                <div class="step" :class="getStepClass(3)">
+                                    <i class="bi bi-check-circle fs-3"></i>
+                                    <p class="mb-0 mt-2 small">검증</p>
+                                </div>
+                            </div>
+                            <div class="col">
+                                <div class="step" :class="getStepClass(4)">
+                                    <i class="bi bi-upload fs-3"></i>
+                                    <p class="mb-0 mt-2 small">발행</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 로그 -->
+                        <div class="mt-3">
+                            <strong>최근 로그:</strong>
+                            <div class="bg-light p-2 rounded mt-2" style="max-height: 150px; overflow-y: auto;">
+                                <template x-for="log in logs" :key="log.id">
+                                    <div class="small" x-text="log.message"></div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+
+                <template x-if="!isRunning">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-pause-circle fs-1"></i>
+                        <p class="mt-2 mb-0">진행 중인 작업이 없습니다</p>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 포스트 생성 패널 -->
+<div class="row mt-4" x-data="generatePanel()" x-init="init()">
+    <div class="col">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-magic"></i>
+                    AI 포스트 생성
+                </h5>
+                <span class="badge bg-white text-primary" x-show="availableArticles > 0"
+                      x-text="`사용 가능한 기사 ${availableArticles}개`"></span>
+                <span class="badge bg-warning text-dark" x-show="availableArticles === 0">
+                    기사 없음 — 크롤러 먼저 실행
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">생성 개수</label>
+                        <select class="form-select" x-model="genCount">
+                            <option value="1">1개</option>
+                            <option value="2">2개</option>
+                            <option value="3">3개</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">카테고리</label>
+                        <input type="text" class="form-control" x-model="genCategory"
+                               :placeholder="categoryPlaceholder">
+                    </div>
+                    <div class="col-md-5">
+                        <button class="btn btn-primary w-100" @click="startGenerate()"
+                                :disabled="generating || availableArticles === 0">
+                            <span x-show="!generating">
+                                <i class="bi bi-lightning-fill me-1"></i>포스트 생성 시작
+                            </span>
+                            <span x-show="generating">
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                생성 중... (<span x-text="genProgress"></span>%)
+                            </span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 진행 상태 -->
+                <div class="mt-3" x-show="generating || genResult">
+                    <div class="progress mb-2" x-show="generating" style="height:20px">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                             :style="`width:${genProgress}%`" x-text="genProgress + '%'"></div>
+                    </div>
+                    <div class="alert mb-0"
+                         :class="genError ? 'alert-danger' : (genResult ? 'alert-success' : 'alert-info')"
+                         x-show="genMessage">
+                        <i class="bi me-2"
+                           :class="genError ? 'bi-x-circle' : (genResult ? 'bi-check-circle' : 'bi-hourglass-split')"></i>
+                        <span x-text="genMessage"></span>
+                        <a href="/content" class="ms-2 btn btn-sm btn-outline-success" x-show="genResult">
+                            콘텐츠 관리에서 확인
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 생성 내역 -->
+<div class="row mt-4">
+    <div class="col">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-clock-history"></i>
+                    생성 내역
+                </h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary" onclick="location.reload()">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        새로고침
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- 필터 -->
+                <div class="row mb-3" x-data="workflowHistory()">
+                    <div class="col-md-3">
+                        <select class="form-select" x-model="filter.status" @change="loadHistory()">
+                            <option value="">전체 상태</option>
+                            <option value="draft">초안</option>
+                            <option value="approved">승인</option>
+                            <option value="published">발행</option>
+                            <option value="rejected">거부</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <input type="text" class="form-control" placeholder="제목 또는 키워드 검색..." x-model="filter.search" @input.debounce.500ms="loadHistory()">
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" x-model="filter.limit" @change="loadHistory()">
+                            <option value="10">10개씩</option>
+                            <option value="20" selected>20개씩</option>
+                            <option value="50">50개씩</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 테이블 -->
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>제목</th>
+                                <th>키워드</th>
+                                <th>SEO 점수</th>
+                                <th>상태</th>
+                                <th>생성일</th>
+                                <th>액션</th>
+                            </tr>
+                        </thead>
+                        <tbody x-data="workflowHistory()">
+                            <template x-for="post in posts" :key="post.id">
+                                <tr>
+                                    <td x-text="post.id"></td>
+                                    <td x-text="post.title"></td>
+                                    <td><span class="badge bg-info" x-text="post.keyword"></span></td>
+                                    <td>
+                                        <span class="badge"
+                                              :class="post.seo_score >= 90 ? 'bg-success' : post.seo_score >= 70 ? 'bg-warning' : 'bg-danger'"
+                                              x-text="post.seo_score + '점'"></span>
+                                    </td>
+                                    <td>
+                                        <span class="badge"
+                                              :class="{
+                                                  'bg-secondary': post.status === 'draft',
+                                                  'bg-primary': post.status === 'approved',
+                                                  'bg-success': post.status === 'published',
+                                                  'bg-danger': post.status === 'rejected'
+                                              }"
+                                              x-text="getStatusLabel(post.status)"></span>
+                                    </td>
+                                    <td x-text="formatDate(post.created_at)"></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary" @click="viewPost(post.id)">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <template x-if="posts.length === 0">
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted">생성 내역이 없습니다</td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 페이지네이션 -->
+                <nav x-data="workflowHistory()" x-show="totalPages > 1">
+                    <ul class="pagination justify-content-center">
+                        <li class="page-item" :class="{ 'disabled': currentPage === 1 }">
+                            <a class="page-link" href="#" @click.prevent="loadHistory(currentPage - 1)">이전</a>
+                        </li>
+                        <template x-for="page in Array.from({length: totalPages}, (_, i) => i + 1)" :key="page">
+                            <li class="page-item" :class="{ 'active': page === currentPage }">
+                                <a class="page-link" href="#" @click.prevent="loadHistory(page)" x-text="page"></a>
+                            </li>
+                        </template>
+                        <li class="page-item" :class="{ 'disabled': currentPage === totalPages }">
+                            <a class="page-link" href="#" @click.prevent="loadHistory(currentPage + 1)">다음</a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 크롤러 실행 패널 -->
+<div class="row mt-4" x-data="crawlerPanel()" x-init="init()">
+    <div class="col">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-cloud-download"></i>
+                    크롤러 실행
+                </h5>
+                <span class="badge bg-success" x-show="crawlStatus.unused > 0"
+                      x-text="`미사용 기사 ${crawlStatus.unused}개`"></span>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <div class="card bg-light border-0 text-center p-3">
+                            <div class="fs-3 fw-bold text-primary" x-text="crawlStatus.total_articles ?? '-'"></div>
+                            <small class="text-muted">수집된 기사</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light border-0 text-center p-3">
+                            <div class="fs-3 fw-bold text-success" x-text="crawlStatus.processed ?? '-'"></div>
+                            <small class="text-muted">정제 완료</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light border-0 text-center p-3">
+                            <div class="fs-3 fw-bold text-warning" x-text="crawlStatus.unused ?? '-'"></div>
+                            <small class="text-muted">포스트 미변환</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-primary w-100" @click="runCrawl()"
+                                :disabled="crawling">
+                            <span x-show="!crawling">
+                                <i class="bi bi-play-fill me-1"></i>크롤러 실행
+                            </span>
+                            <span x-show="crawling">
+                                <span class="spinner-border spinner-border-sm me-1"></span>크롤링 중...
+                            </span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 진행 메시지 -->
+                <div class="mt-3" x-show="crawlMessage">
+                    <div class="alert mb-0"
+                         :class="crawlError ? 'alert-danger' : 'alert-info'">
+                        <i class="bi me-2" :class="crawlError ? 'bi-x-circle' : 'bi-info-circle'"></i>
+                        <span x-text="crawlMessage"></span>
+                    </div>
+                </div>
+
+                <!-- 최근 크롤링 로그 -->
+                <div class="mt-3" x-show="crawlStatus.recent_logs && crawlStatus.recent_logs.length > 0">
+                    <small class="text-muted">최근 크롤링 로그</small>
+                    <div class="table-responsive mt-1">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead><tr><th>URL</th><th>상태</th><th>시간</th></tr></thead>
+                            <tbody>
+                                <template x-for="log in (crawlStatus.recent_logs || []).slice(0,5)" :key="log.id">
+                                    <tr>
+                                        <td><small class="text-truncate d-block" style="max-width:300px" x-text="log.url"></small></td>
+                                        <td>
+                                            <span class="badge" :class="log.success ? 'bg-success' : 'bg-danger'"
+                                                  x-text="log.success ? '성공' : '실패'"></span>
+                                        </td>
+                                        <td><small x-text="formatDate(log.crawled_at)"></small></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.step {
+    padding: 15px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.step.active {
+    background-color: #0d6efd;
+    color: white;
+}
+
+.step.completed {
+    background-color: #198754;
+    color: white;
+}
+
+.step.pending {
+    background-color: #f8f9fa;
+    color: #6c757d;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// SSE 연결 및 워크플로우 진행 상황
+function workflowProgress() {
+    return {
+        isRunning: false,
+        progress: 0,
+        currentStep: 0,
+        currentTask: {
+            title: ''
+        },
+        logs: [],
+        eventSource: null,
+
+        init() {
+            // SSE 연결
+            this.connectSSE();
+        },
+
+        connectSSE() {
+            this.eventSource = new EventSource('/api/stream/workflow');
+
+            this.eventSource.addEventListener('workflow.started', (e) => {
+                const data = JSON.parse(e.data);
+                this.isRunning = true;
+                this.currentStep = 0;
+                this.progress = 0;
+                this.currentTask = data;
+                this.addLog(`작업 시작: ${data.title}`);
+            });
+
+            this.eventSource.addEventListener('workflow.progress', (e) => {
+                const data = JSON.parse(e.data);
+                this.currentStep = data.step;
+                this.progress = data.progress;
+                this.addLog(data.message);
+            });
+
+            this.eventSource.addEventListener('workflow.completed', (e) => {
+                const data = JSON.parse(e.data);
+                this.isRunning = false;
+                this.progress = 100;
+                this.addLog(`작업 완료: ${data.message}`);
+            });
+
+            this.eventSource.addEventListener('workflow.failed', (e) => {
+                const data = JSON.parse(e.data);
+                this.isRunning = false;
+                this.addLog(`오류: ${data.error}`);
+            });
+
+            this.eventSource.onerror = () => {
+                console.error('SSE 연결 오류');
+                // 5초 후 재연결
+                setTimeout(() => this.connectSSE(), 5000);
+            };
+        },
+
+        getStepClass(step) {
+            if (this.currentStep > step) return 'completed';
+            if (this.currentStep === step) return 'active';
+            return 'pending';
+        },
+
+        addLog(message) {
+            this.logs.unshift({
+                id: Date.now(),
+                message: `[${new Date().toLocaleTimeString()}] ${message}`
+            });
+            if (this.logs.length > 20) this.logs.pop();
+        }
+    }
+}
+
+// 생성 내역
+function workflowHistory() {
+    return {
+        posts: [],
+        filter: {
+            status: '',
+            search: '',
+            limit: 20
+        },
+        currentPage: 1,
+        totalPages: 1,
+
+        async init() {
+            await this.loadHistory();
+        },
+
+        async loadHistory(page = 1) {
+            this.currentPage = page;
+            const params = new URLSearchParams({
+                page: this.currentPage,
+                limit: this.filter.limit,
+                status: this.filter.status
+            });
+
+            const response = await fetch(`/api/posts?${params}`);
+            const data = await response.json();
+
+            this.posts = data.posts;
+            this.totalPages = data.total_pages;
+        },
+
+        getStatusLabel(status) {
+            const labels = {
+                'draft': '초안',
+                'approved': '승인',
+                'published': '발행',
+                'rejected': '거부'
+            };
+            return labels[status] || status;
+        },
+
+        formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleString('ko-KR', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        },
+
+        viewPost(postId) {
+            alert(`포스트 상세보기 기능은 콘텐츠 관리 페이지에서 제공됩니다. (ID: ${postId})`);
+        }
+    }
+}
+
+// 포스트 생성 패널
+function generatePanel() {
+    return {
+        availableArticles: 0,
+        genCount: '1',
+        genCategory: '',
+        categoryPlaceholder: '카테고리 로딩 중...',
+        blogCategories: [],
+        generating: false,
+        genProgress: 0,
+        genMessage: null,
+        genError: false,
+        genResult: false,
+
+        async init() {
+            await Promise.all([this.loadAvailable(), this.loadBlogCategories()]);
+
+            const sse = window.sseSource;
+            if (sse) {
+                sse.addEventListener('message', (e) => {
+                    try {
+                        const ev = JSON.parse(e.data);
+                        if (ev.type === 'workflow.started') {
+                            this.generating = true;
+                            this.genProgress = 10;
+                            this.genMessage = ev.data.title;
+                            this.genError = false;
+                            this.genResult = false;
+                        } else if (ev.type === 'workflow.progress') {
+                            this.genProgress = ev.data.progress || this.genProgress;
+                            this.genMessage = ev.data.message;
+                        } else if (ev.type === 'workflow.completed') {
+                            this.generating = false;
+                            this.genProgress = 100;
+                            this.genResult = true;
+                            this.genMessage = ev.data.message;
+                            this.loadAvailable();
+                        } else if (ev.type === 'workflow.failed') {
+                            this.generating = false;
+                            this.genError = true;
+                            this.genMessage = '실패: ' + ev.data.error;
+                        }
+                    } catch {}
+                });
+            }
+        },
+
+        async loadAvailable() {
+            try {
+                const res = await fetch('/api/crawl/status');
+                const data = await res.json();
+                this.availableArticles = data.unused || 0;
+            } catch {}
+        },
+
+        async loadBlogCategories() {
+            try {
+                const res = await fetch('/api/blogs/current');
+                const blog = await res.json();
+                // categories 파싱 (JSON 문자열 또는 배열)
+                let cats = blog.categories || [];
+                if (typeof cats === 'string') {
+                    try { cats = JSON.parse(cats); } catch { cats = []; }
+                }
+                this.blogCategories = Array.isArray(cats) ? cats : [];
+                if (this.blogCategories.length > 0) {
+                    this.categoryPlaceholder = '예: ' + this.blogCategories[0];
+                } else {
+                    this.categoryPlaceholder = '카테고리 입력 (선택)';
+                }
+            } catch {
+                this.categoryPlaceholder = '카테고리 입력 (선택)';
+            }
+        },
+
+        async startGenerate() {
+            this.generating = true;
+            this.genProgress = 5;
+            this.genMessage = '포스트 생성 요청 중...';
+            this.genError = false;
+            this.genResult = false;
+            // 카테고리 미입력 시 현재 블로그의 첫 번째 카테고리 사용
+            const defaultCategory = this.blogCategories[0] || '';
+            try {
+                const res = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        count: parseInt(this.genCount),
+                        category: this.genCategory || defaultCategory
+                    })
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    this.genMessage = '오류: ' + (data.error || data.message);
+                    this.genError = true;
+                    this.generating = false;
+                }
+            } catch (e) {
+                this.genMessage = '오류: ' + e.message;
+                this.genError = true;
+                this.generating = false;
+            }
+        }
+    }
+}
+
+// 크롤러 패널
+function crawlerPanel() {
+    return {
+        crawlStatus: {},
+        crawling: false,
+        crawlMessage: null,
+        crawlError: false,
+
+        async init() {
+            await this.loadStatus();
+
+            // SSE 이벤트 수신
+            const sse = window.sseSource;
+            if (sse) {
+                sse.addEventListener('message', (e) => {
+                    try {
+                        const ev = JSON.parse(e.data);
+                        if (ev.type === 'crawl.started') {
+                            this.crawlMessage = ev.data.message;
+                            this.crawlError = false;
+                        } else if (ev.type === 'crawl.progress') {
+                            this.crawlMessage = ev.data.message;
+                        } else if (ev.type === 'crawl.completed') {
+                            this.crawling = false;
+                            this.crawlMessage = ev.data.message;
+                            this.loadStatus();
+                        } else if (ev.type === 'crawl.failed') {
+                            this.crawling = false;
+                            this.crawlMessage = '오류: ' + ev.data.error;
+                            this.crawlError = true;
+                        }
+                    } catch {}
+                });
+            }
+        },
+
+        async loadStatus() {
+            try {
+                const res = await fetch('/api/crawl/status');
+                this.crawlStatus = await res.json();
+            } catch (e) { console.error(e); }
+        },
+
+        async runCrawl() {
+            this.crawling = true;
+            this.crawlError = false;
+            this.crawlMessage = '크롤링 시작 중...';
+            try {
+                const res = await fetch('/api/crawl/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'all' })
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    this.crawlMessage = '오류: ' + data.error;
+                    this.crawlError = true;
+                    this.crawling = false;
+                }
+            } catch (e) {
+                this.crawlMessage = '오류: ' + e.message;
+                this.crawlError = true;
+                this.crawling = false;
+            }
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return '-';
+            return new Date(dateStr).toLocaleString('ko-KR', {
+                month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit'
+            });
+        }
+    }
+}
+</script>
+{% endblock %}
