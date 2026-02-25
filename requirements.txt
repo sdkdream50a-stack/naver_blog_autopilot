@@ -19,6 +19,7 @@ jinja2>=3.1.0
 
 # 웹 프레임워크 (UI)
 Flask>=3.0.0
+gunicorn>=21.2.0
 
 # 유틸리티
 loguru>=0.7.0

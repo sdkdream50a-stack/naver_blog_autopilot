@@ -1,0 +1,23 @@
+[Unit]
+Description=네이버 블로그 자동화 Flask 앱
+After=network.target
+
+[Service]
+Type=simple
+User=autopilot
+WorkingDirectory=/opt/naver_blog_autopilot
+Environment=PATH=/opt/naver_blog_autopilot/venv/bin
+EnvironmentFile=/opt/naver_blog_autopilot/.env
+ExecStart=/opt/naver_blog_autopilot/venv/bin/gunicorn \
+    --bind 127.0.0.1:5002 \
+    --workers 2 \
+    --threads 4 \
+    --timeout 120 \
+    --access-logfile /opt/naver_blog_autopilot/logs/access.log \
+    --error-logfile /opt/naver_blog_autopilot/logs/error.log \
+    "app:create_app()"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
